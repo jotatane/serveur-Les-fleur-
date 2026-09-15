@@ -1,80 +1,67 @@
 <?php
-// Désactiver l'affichage des erreurs directes pour ne pas corrompre le JSON en cas de petit souci
-error_reporting(0);
-ini_set('display_errors', '0');
-
-// Définir l'en-tête pour indiquer qu'on renvoie du JSON proprement encodé en UTF-8
-header('Content-Type: application/json; charset=utf-8');
-
-/**
- * Fonction pour scanner proprement un dossier de manière récursive
- */
-function scanFolder($baseDir, $ignoreList = ['.', '..', 'index.php', '.htaccess']) {
-    $results = [];
-    
-    // Vérifier si le dossier racine existe
-    if (!is_dir($baseDir)) {
-        return $results;
+function ScanDirectory($Directory, $dirCheckUselessFiles = array(), $tableau=false, $ignoreEntry = ['.','..',
+	'index.php',".htaccess"], $ignoreDirectory = array()){
+$slash = '';
+	$MyDirectory = opendir($Directory) or die('Erreur');
+	while($Entry = @readdir($MyDirectory)){
+		if(!equal($Entry,$ignoreEntry)){
+			if(is_dir($Directory.'/'.$Entry)){
+				$slash = '/';			
+			}
+                        else
+                        {
+                         $slash = '';
+                        }
+            $elem = substr($Directory.'/'.$Entry, strlen(strstr($Directory.'/'.$Entry, '/', true))+1).$slash;
+			$tableau[] = array(
+				"path"=>$elem,
+				"checksumSHA1"=>is_dir($elem) ? false : sha1_file($elem),
+				"url"=>(isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://".$_SERVER['HTTP_HOST'].str_replace("index.php","",$_SERVER['REQUEST_URI']).$elem
+			);
+			if(!contain($Directory,$ignoreDirectory) && is_dir($Directory.'/'.$Entry)){
+				$tableau = ScanDirectory($Directory.'/'.$Entry,array(),$tableau,$ignoreEntry,$ignoreDirectory);
+			}
+		}
+	}
+	foreach($dirCheckUselessFiles as $v){
+        $tableau[] = array(
+            "dirCheckUselessFiles"=>$v
+        );
     }
-
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($baseDir, RecursiveDirectoryIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::SELF_FIRST
-    );
-
-    // Déterminer l'URL de base actuelle (protocole + domaine + chemin du script)
-    $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? "https" : "http";
-    $host = $_SERVER['HTTP_HOST'];
-    $scriptPath = dirname($_SERVER['SCRIPT_NAME']);
-    // Éviter les doubles slashes si on est à la racine
-    $baseUrl = $protocol . "://" . $host . ($scriptPath === '/' ? '' : $scriptPath) . "/";
-
-    foreach ($iterator as $file) {
-        $fileName = $file->getFilename();
-
-        // Ignorer les fichiers non désirés
-        if (in_array($fileName, $ignoreList) || strpos($fileName, '.') === 0) {
-            continue;
-        }
-
-        $filePath = $file->getPathname();
-        
-        // Obtenir le chemin relatif propre par rapport au dossier de base (ex: mods/monmod.jar)
-        $relativePath = str_replace('\\', '/', substr($filePath, strlen($baseDir) + 1));
-
-        if ($file->isDir()) {
-            // Optionnel : si vous voulez lister les dossiers vides ou laisser le launcher les créer
-            continue;
-        } else {
-            // C'est un fichier : on récupère ses infos
-            $results[] = [
-                "path" => $relativePath,
-                "checksumSHA1" => @sha1_file($filePath),
-                "url" => $baseUrl . $relativePath
-            ];
-        }
-    }
-
-    return $results;
+	closedir($MyDirectory);
+	return $tableau;
 }
 
-// Définition des répertoires principaux à analyser pour votre launcher Fabric
-$foldersToScan = ['.']; // Ou spécifiez par exemple ['.'] si tout est à la racine du script
-$fileList = [];
-
-// Analyse du répertoire courant
-$fileList = scanFolder('.');
-
-// Si vous avez besoin de spécifier des dossiers ou fichiers de nettoyage (pour supprimer les vieux mods obsolètes)
-$dirCheckUselessFiles = ["mods", "config"];
-foreach ($dirCheckUselessFiles as $uselessDir) {
-    if (is_dir($uselessDir)) {
-        // Le launcher saura qu'il doit nettoyer ces dossiers si besoin
-        // (Vous pouvez adapter cette structure selon ce que votre launcher attend)
-    }
+function contain($file,$array){
+	foreach ($array as $value) {
+		if(strpos($file,$value) !== false){
+			return true;
+		}
+	}
+	return false;
 }
 
-// Affichage du JSON final propre
-echo json_encode($fileList, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-exit;
+function equal($file,$array){
+	foreach ($array as $value) {
+		if($file == $value){
+			return true;
+		}
+	}
+	return false;
+}
+
+function contains($files,$array){
+	foreach ($files as $value) {
+		if(contain($value,$array)){
+			return true;
+		}
+	}
+	return false;
+}
+
+// Si vous souhaitez faire supprimer des vieux fichiers dans des répertoires prédéfinis c'est par ici
+// Ajoutez dans le tableau ci-après le répertoire à faire analyser
+$tableau = ScanDirectory('.',["mods","config"]);
+$tableau = $tableau == false ? [] : $tableau;
+echo json_encode($tableau);
 ?>
